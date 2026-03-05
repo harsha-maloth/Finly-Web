@@ -2,7 +2,7 @@
 
 A simple expense tracker that runs in the browser. No server, no setup — just open the page and use it.
 
-Live at: `https://airgem.github.io/finly`
+Live at: `https://harsha-maloth.github.io/Finly-Web/`
 
 ---
 

@@ -82,4 +82,4 @@ MIT — do whatever you want with it.
 
 ---
 
-*Originally inspired by [Finly](https://github.com/airgem/Finly-main), a desktop app built with Python and PySide6.*
+*Originally inspired by [Finly](https://github.com/harsha-maloth/Finly), a desktop app built with Python and PySide6.*

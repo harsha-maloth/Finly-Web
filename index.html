@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finly — Expense Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { background: #0f0f11; color: #f0f0f0; font-family: 'Outfit', sans-serif; }
+    #root { min-height: 100vh; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #18181c; }
+    ::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 2px; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fu  { animation: fadeUp 0.35s ease both; }
+    .fu1 { animation: fadeUp 0.35s 0.05s ease both; }
+    .fu2 { animation: fadeUp 0.35s 0.10s ease both; }
+    .fu3 { animation: fadeUp 0.35s 0.15s ease both; }
+    .fu4 { animation: fadeUp 0.35s 0.20s ease both; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    /* ── constants ─────────────────────────────────────── */
+    const MONTHS = ["January","February","March","April","May","June",
+                    "July","August","September","October","November","December"];
+    const C = {
+      bg:"#0f0f11", surface:"#18181c", border:"#2a2a30",
+      accent:"#c8f55a", accentDim:"#9bbd3e",
+      income:"#4ade80", expense:"#f87171",
+      text:"#f0f0f0", muted:"#888", card:"#1e1e24",
+    };
+    const DEFAULT_CATS = ["Salary","Freelance","Food","Utilities","Transport","Health","Entertainment","Other"];
+
+    const SEED_TRANSACTIONS = [
+      { id:1, date:"2025-03-15", amount:3200,  type:"Income",  category:"Salary",      description:"March salary" },
+      { id:2, date:"2025-03-10", amount:45.5,  type:"Expense", category:"Food",        description:"Groceries" },
+      { id:3, date:"2025-03-08", amount:120,   type:"Expense", category:"Utilities",   description:"Electricity bill" },
+      { id:4, date:"2025-03-05", amount:500,   type:"Income",  category:"Freelance",   description:"Web project" },
+      { id:5, date:"2025-03-02", amount:89,    type:"Expense", category:"Transport",   description:"Monthly bus pass" },
+    ];
+
+    /* ── localStorage helpers ──────────────────────────── */
+    const STORE_KEY = "finly_users_v1";
+
+    function loadUsers() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (_) {}
+      return {
+        demo: {
+          password: "demo123",
+          transactions: SEED_TRANSACTIONS,
+          categories: DEFAULT_CATS,
+          nextId: 6,
+        }
+      };
+    }
+
+    function saveUsers(users) {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(users)); } catch (_) {}
+    }
+
+    /* ── formatting ────────────────────────────────────── */
+    const fmt = n => n.toLocaleString("en-IN", { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+    /* ── tiny components ───────────────────────────────── */
+    function Modal({ children, onClose }) {
+      return (
+        <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(4px)"}}>
+          <div onClick={e=>e.stopPropagation()} className="fu" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,padding:32,width:"100%",maxWidth:460,margin:"0 16px"}}>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    function Field({ label, children }) {
+      return (
+        <div style={{marginBottom:16}}>
+          <label style={{display:"block",fontSize:11,color:C.muted,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:6}}>{label}</label>
+          {children}
+        </div>
+      );
+    }
+
+    const inputStyle = (extra={}) => ({
+      width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+      padding:"10px 14px",color:C.text,fontSize:14,outline:"none",fontFamily:"'Outfit',sans-serif",...extra
+    });
+
+    function TInput({ label, ...props }) {
+      const [focus, setFocus] = useState(false);
+      return (
+        <Field label={label}>
+          <input {...props}
+            style={inputStyle({borderColor:focus?C.accent:C.border})}
+            onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)} />
+        </Field>
+      );
+    }
+
+    function TSelect({ label, children, ...props }) {
+      return (
+        <Field label={label}>
+          <select {...props} style={inputStyle()}>{children}</select>
+        </Field>
+      );
+    }
+
+    function Btn({ children, variant="primary", ...props }) {
+      const [hover, setHover] = useState(false);
+      const base = {padding:"10px 20px",borderRadius:8,border:"none",cursor:"pointer",
+                    fontFamily:"'Outfit',sans-serif",fontSize:14,fontWeight:500,transition:"all 0.15s"};
+      const v = {
+        primary: {background:hover?C.accentDim:C.accent, color:"#0f0f11"},
+        ghost:   {background:"transparent",color:C.muted,border:`1px solid ${C.border}`},
+        danger:  {background:"transparent",color:C.expense,border:`1px solid ${C.expense}55`},
+      };
+      return (
+        <button {...props}
+          style={{...base,...v[variant],...props.style}}
+          onMouseEnter={()=>setHover(true)}
+          onMouseLeave={()=>setHover(false)}>
+          {children}
+        </button>
+      );
+    }
+
+    /* ── Login page ────────────────────────────────────── */
+    function LoginPage({ onLogin, onRegister }) {
+      const [mode, setMode] = useState("login");
+      const [user, setUser] = useState("");
+      const [pass, setPass] = useState("");
+      const [err,  setErr]  = useState("");
+
+      function submit() {
+        setErr("");
+        if (!user.trim() || !pass.trim()) return setErr("Please fill in both fields.");
+        if (mode === "login") {
+          if (!onLogin(user.trim(), pass)) setErr("Wrong username or password.");
+        } else {
+          if (!onRegister(user.trim(), pass)) setErr("That username is already taken.");
+        }
+      }
+
+      return (
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
+          {/* grid bg */}
+          <div style={{position:"absolute",inset:0,
+            backgroundImage:`linear-gradient(${C.border} 1px,transparent 1px),linear-gradient(90deg,${C.border} 1px,transparent 1px)`,
+            backgroundSize:"40px 40px",opacity:0.25,pointerEvents:"none"}} />
+          <div style={{position:"absolute",top:"15%",left:"50%",transform:"translateX(-50%)",
+            width:560,height:560,background:`radial-gradient(circle,${C.accent}18 0%,transparent 70%)`,pointerEvents:"none"}} />
+
+          <div className="fu" style={{position:"relative",background:C.surface,border:`1px solid ${C.border}`,
+            borderRadius:20,padding:"48px 40px",width:"100%",maxWidth:420,margin:"0 16px"}}>
+
+            <div style={{textAlign:"center",marginBottom:36}}>
+              <div style={{fontFamily:"'DM Serif Display',serif",fontSize:48,color:C.accent,lineHeight:1}}>Finly</div>
+              <div style={{color:C.muted,fontSize:13,marginTop:8}}>track your money, simply</div>
+            </div>
+
+            {/* tab */}
+            <div style={{display:"flex",marginBottom:28,background:C.bg,borderRadius:8,padding:4}}>
+              {["login","register"].map(m=>(
+                <button key={m} onClick={()=>{setMode(m);setErr("");}}
+                  style={{flex:1,padding:"8px",border:"none",borderRadius:6,
+                    background:mode===m?C.card:"transparent",
+                    color:mode===m?C.text:C.muted,
+                    cursor:"pointer",fontFamily:"'Outfit',sans-serif",fontSize:14,
+                    transition:"all 0.2s",textTransform:"capitalize"}}>
+                  {m}
+                </button>
+              ))}
+            </div>
+
+            <TInput label="Username" value={user} onChange={e=>setUser(e.target.value)}
+              placeholder="your username" onKeyDown={e=>e.key==="Enter"&&submit()} />
+            <TInput label="Password" type="password" value={pass} onChange={e=>setPass(e.target.value)}
+              placeholder="••••••••" onKeyDown={e=>e.key==="Enter"&&submit()} />
+
+            {err && <div style={{color:C.expense,fontSize:13,marginBottom:16,padding:"8px 12px",
+              background:`${C.expense}15`,borderRadius:6}}>{err}</div>}
+
+            <Btn style={{width:"100%",padding:13}} onClick={submit}>
+              {mode==="login"?"Sign in":"Create account"}
+            </Btn>
+
+            <div style={{textAlign:"center",marginTop:18,fontSize:12,color:C.muted}}>
+              Try the demo:&nbsp;
+              <span style={{color:C.accent,cursor:"pointer",textDecoration:"underline"}}
+                onClick={()=>{setUser("demo");setPass("demo123");}}>
+                demo / demo123
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ── Transaction modal ─────────────────────────────── */
+    function TxModal({ tx, categories, onSave, onClose }) {
+      const today = new Date().toISOString().slice(0,10);
+      const [f, setF] = useState(tx ? {...tx,amount:String(tx.amount)} : {date:today,amount:"",type:"Expense",category:categories[0]||"Other",description:""});
+      const set = (k,v) => setF(p=>({...p,[k]:v}));
+
+      function save() {
+        if (!f.date || !f.amount || parseFloat(f.amount)<=0) return;
+        onSave({...f, amount:parseFloat(f.amount)});
+      }
+
+      return (
+        <Modal onClose={onClose}>
+          <h3 style={{fontFamily:"'DM Serif Display',serif",fontSize:22,marginBottom:24}}>
+            {tx?"Edit transaction":"New transaction"}
+          </h3>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+            <TInput label="Date" type="date" value={f.date} onChange={e=>set("date",e.target.value)}/>
+            <TInput label="Amount" type="number" min="0" step="0.01" value={f.amount}
+              onChange={e=>set("amount",e.target.value)} placeholder="0.00"/>
+          </div>
+          <TSelect label="Type" value={f.type} onChange={e=>set("type",e.target.value)}>
+            <option>Income</option><option>Expense</option>
+          </TSelect>
+          <TSelect label="Category" value={f.category} onChange={e=>set("category",e.target.value)}>
+            {categories.map(c=><option key={c}>{c}</option>)}
+          </TSelect>
+          <TInput label="Description" value={f.description} onChange={e=>set("description",e.target.value)}
+            placeholder="What was this for?"/>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={save}>{tx?"Save changes":"Add"}</Btn>
+          </div>
+        </Modal>
+      );
+    }
+
+    /* ── Category modal ────────────────────────────────── */
+    function CatModal({ categories, onSave, onClose }) {
+      const [cats, setCats] = useState([...categories]);
+      const [input, setInput] = useState("");
+
+      function add() {
+        const v = input.trim();
+        if (v && !cats.includes(v)) { setCats([...cats,v]); setInput(""); }
+      }
+
+      return (
+        <Modal onClose={onClose}>
+          <h3 style={{fontFamily:"'DM Serif Display',serif",fontSize:22,marginBottom:20}}>Categories</h3>
+          <div style={{maxHeight:220,overflowY:"auto",marginBottom:16}}>
+            {cats.map(c=>(
+              <div key={c} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                padding:"8px 12px",borderRadius:8,marginBottom:4,background:C.bg}}>
+                <span style={{fontSize:14}}>{c}</span>
+                <button onClick={()=>setCats(cats.filter(x=>x!==c))}
+                  style={{background:"none",border:"none",color:C.expense,cursor:"pointer",fontSize:18,lineHeight:1}}>×</button>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:16}}>
+            <input value={input} onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&add()}
+              placeholder="New category…"
+              style={inputStyle({flex:1})} />
+            <Btn style={{whiteSpace:"nowrap"}} onClick={add}>Add</Btn>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={()=>onSave(cats)}>Save</Btn>
+          </div>
+        </Modal>
+      );
+    }
+
+    /* ── Stat card ─────────────────────────────────────── */
+    function StatCard({ label, value, color, cls="" }) {
+      return (
+        <div className={cls} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"20px 24px",flex:1,minWidth:160}}>
+          <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{label}</div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:24,color,fontWeight:500}}>₹{fmt(value)}</div>
+        </div>
+      );
+    }
+
+    /* ── Dashboard ─────────────────────────────────────── */
+    function Dashboard({ userData, onUpdate, onLogout, username }) {
+      const now = new Date();
+      const [year,  setYear]  = useState(now.getFullYear());
+      const [month, setMonth] = useState(now.getMonth());
+      const [modal, setModal] = useState(null);
+      const [editTx,setEditTx]= useState(null);
+      const [search,setSearch]= useState("");
+
+      const { transactions, categories, nextId } = userData;
+
+      const monthTx = transactions.filter(t=>{
+        const d = new Date(t.date);
+        return d.getFullYear()===year && d.getMonth()===month;
+      });
+
+      const filtered = monthTx.filter(t=>
+        !search ||
+        t.description.toLowerCase().includes(search.toLowerCase()) ||
+        t.category.toLowerCase().includes(search.toLowerCase())
+      );
+
+      const income  = monthTx.filter(t=>t.type==="Income").reduce((s,t)=>s+t.amount,0);
+      const expense = monthTx.filter(t=>t.type==="Expense").reduce((s,t)=>s+t.amount,0);
+      const balance = income - expense;
+
+      function prevMonth() { if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1); }
+      function nextMonth() { if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1); }
+
+      function addTx(form) {
+        onUpdate({...userData, transactions:[...transactions,{...form,id:nextId}], nextId:nextId+1});
+        setModal(null);
+      }
+      function saveTx(form) {
+        onUpdate({...userData, transactions:transactions.map(t=>t.id===editTx.id?{...form,id:t.id}:t)});
+        setModal(null); setEditTx(null);
+      }
+      function deleteTx(id) {
+        if (!window.confirm("Delete this transaction?")) return;
+        onUpdate({...userData, transactions:transactions.filter(t=>t.id!==id)});
+      }
+      function saveCats(cats) {
+        onUpdate({...userData, categories:cats});
+        setModal(null);
+      }
+
+      const catBreakdown = categories
+        .map(cat=>({ name:cat, total:monthTx.filter(t=>t.type==="Expense"&&t.category===cat).reduce((s,t)=>s+t.amount,0) }))
+        .filter(c=>c.total>0)
+        .sort((a,b)=>b.total-a.total)
+        .slice(0,6);
+      const maxCat = catBreakdown[0]?.total || 1;
+      const savingsRate = income>0 ? Math.max(0,Math.round((balance/income)*100)) : null;
+
+      return (
+        <div style={{minHeight:"100vh"}}>
+
+          {/* top bar */}
+          <div style={{borderBottom:`1px solid ${C.border}`,padding:"0 24px",display:"flex",
+            alignItems:"center",justifyContent:"space-between",height:60,
+            position:"sticky",top:0,background:C.bg,zIndex:100}}>
+            <div style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:C.accent}}>Finly</div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:13,color:C.muted}}>@{username}</span>
+              <Btn variant="ghost" style={{padding:"6px 14px",fontSize:13}} onClick={onLogout}>Sign out</Btn>
+            </div>
+          </div>
+
+          <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 20px"}}>
+
+            {/* month nav */}
+            <div className="fu" style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+              <button onClick={prevMonth} style={{background:C.surface,border:`1px solid ${C.border}`,
+                color:C.text,width:34,height:34,borderRadius:8,cursor:"pointer",fontSize:18}}>‹</button>
+              <div style={{fontFamily:"'DM Serif Display',serif",fontSize:26,minWidth:220}}>
+                {MONTHS[month]} {year}
+              </div>
+              <button onClick={nextMonth} style={{background:C.surface,border:`1px solid ${C.border}`,
+                color:C.text,width:34,height:34,borderRadius:8,cursor:"pointer",fontSize:18}}>›</button>
+            </div>
+
+            {/* stats */}
+            <div className="fu1" style={{display:"flex",gap:12,marginBottom:24,flexWrap:"wrap"}}>
+              <StatCard label="Income"   value={income}  color={C.income}  />
+              <StatCard label="Expenses" value={expense} color={C.expense} />
+              <StatCard label="Balance"  value={balance} color={balance>=0?C.accent:C.expense} />
+            </div>
+
+            {/* main grid */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:20}}>
+              
+              {/* large screens: side by side */}
+              <style>{`@media(min-width:768px){.main-grid{grid-template-columns:1fr 300px!important}}`}</style>
+              <div className="main-grid" style={{display:"grid",gridTemplateColumns:"1fr",gap:20}}>
+
+                {/* transactions */}
+                <div className="fu2" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,overflow:"hidden"}}>
+                  <div style={{padding:"18px 20px",borderBottom:`1px solid ${C.border}`,
+                    display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{fontFamily:"'DM Serif Display',serif",fontSize:20,flex:1}}>Transactions</span>
+                    <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
+                      style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,
+                        padding:"6px 12px",color:C.text,fontSize:13,outline:"none",width:140}} />
+                    <Btn style={{padding:"7px 14px",fontSize:13}} onClick={()=>setModal("add")}>+ Add</Btn>
+                    <Btn variant="ghost" style={{padding:"7px 14px",fontSize:13}} onClick={()=>setModal("cats")}>Categories</Btn>
+                  </div>
+
+                  {filtered.length===0 ? (
+                    <div style={{padding:48,textAlign:"center",color:C.muted,fontSize:14}}>
+                      {search ? "No results" : "No transactions this month"}
+                    </div>
+                  ) : filtered.map((t,i)=>(
+                    <div key={t.id}
+                      style={{display:"flex",alignItems:"center",padding:"13px 20px",
+                        borderBottom:`1px solid ${C.border}`,cursor:"default",
+                        transition:"background 0.15s",animation:`fadeUp 0.3s ${i*0.03}s ease both`}}
+                      onMouseEnter={e=>e.currentTarget.style.background=C.surface}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{width:34,height:34,borderRadius:8,marginRight:14,flexShrink:0,
+                        background:t.type==="Income"?`${C.income}20`:`${C.expense}20`,
+                        display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+                        {t.type==="Income"?"↑":"↓"}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:14,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {t.description||t.category}
+                        </div>
+                        <div style={{fontSize:12,color:C.muted,marginTop:2}}>{t.category} · {t.date}</div>
+                      </div>
+                      <div style={{fontFamily:"'DM Mono',monospace",fontSize:14,
+                        color:t.type==="Income"?C.income:C.expense,marginRight:12,whiteSpace:"nowrap"}}>
+                        {t.type==="Income"?"+":"-"}₹{fmt(t.amount)}
+                      </div>
+                      <div style={{display:"flex",gap:6}}>
+                        <button onClick={()=>{setEditTx(t);setModal("edit");}}
+                          style={{background:"none",border:`1px solid ${C.border}`,color:C.muted,
+                            padding:"3px 9px",borderRadius:6,cursor:"pointer",fontSize:12}}>Edit</button>
+                        <button onClick={()=>deleteTx(t.id)}
+                          style={{background:"none",border:`1px solid ${C.expense}44`,color:C.expense,
+                            padding:"3px 9px",borderRadius:6,cursor:"pointer",fontSize:12}}>Del</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* sidebar */}
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+                  {/* top spending */}
+                  <div className="fu3" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
+                    <div style={{fontFamily:"'DM Serif Display',serif",fontSize:18,marginBottom:18}}>Top spending</div>
+                    {catBreakdown.length===0
+                      ? <div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"12px 0"}}>No expenses this month</div>
+                      : catBreakdown.map(c=>(
+                        <div key={c.name} style={{marginBottom:13}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:5}}>
+                            <span>{c.name}</span>
+                            <span style={{fontFamily:"'DM Mono',monospace",color:C.muted,fontSize:12}}>₹{fmt(c.total)}</span>
+                          </div>
+                          <div style={{height:5,background:C.bg,borderRadius:4,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:`${(c.total/maxCat)*100}%`,
+                              background:C.accent,borderRadius:4,transition:"width 0.6s ease"}} />
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+
+                  {/* savings rate */}
+                  <div className="fu4" style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,padding:22}}>
+                    <div style={{fontFamily:"'DM Serif Display',serif",fontSize:18,marginBottom:14}}>Savings rate</div>
+                    {savingsRate!==null ? (
+                      <>
+                        <div style={{fontFamily:"'DM Mono',monospace",fontSize:38,
+                          color:balance>=0?C.accent:C.expense,lineHeight:1}}>{savingsRate}%</div>
+                        <div style={{color:C.muted,fontSize:12,marginTop:6}}>of income saved this month</div>
+                        <div style={{marginTop:14,height:7,background:C.bg,borderRadius:4,overflow:"hidden"}}>
+                          <div style={{height:"100%",borderRadius:4,transition:"width 0.6s ease",
+                            width:`${Math.min(100,savingsRate)}%`,
+                            background:balance>=0?C.accent:C.expense}} />
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{color:C.muted,fontSize:13}}>Add income to see your rate</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {modal==="add"  && <TxModal categories={categories} onSave={addTx} onClose={()=>setModal(null)} />}
+          {modal==="edit" && <TxModal tx={editTx} categories={categories} onSave={saveTx} onClose={()=>{setModal(null);setEditTx(null);}} />}
+          {modal==="cats" && <CatModal categories={categories} onSave={saveCats} onClose={()=>setModal(null)} />}
+        </div>
+      );
+    }
+
+    /* ── Root app ──────────────────────────────────────── */
+    function App() {
+      const [users,    setUsers]    = useState(loadUsers);
+      const [loggedIn, setLoggedIn] = useState(null);
+
+      // persist on every change
+      useEffect(()=>saveUsers(users), [users]);
+
+      function login(username, password) {
+        const key = username.toLowerCase();
+        const u = users[key];
+        if (u && u.password===password) { setLoggedIn(key); return true; }
+        return false;
+      }
+
+      function register(username, password) {
+        const key = username.toLowerCase();
+        if (users[key]) return false;
+        const newUser = { password, transactions:[], categories:DEFAULT_CATS, nextId:1 };
+        setUsers(u=>({...u,[key]:newUser}));
+        setLoggedIn(key);
+        return true;
+      }
+
+      function updateUserData(data) {
+        setUsers(u=>({...u,[loggedIn]:{...u[loggedIn],...data}}));
+      }
+
+      if (!loggedIn) return <LoginPage onLogin={login} onRegister={register} />;
+
+      return (
+        <Dashboard
+          userData={users[loggedIn]}
+          onUpdate={updateUserData}
+          onLogout={()=>setLoggedIn(null)}
+          username={loggedIn}
+        />
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
